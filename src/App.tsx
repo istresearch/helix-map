@@ -13,7 +13,12 @@ import { useCallback, useRef, useState, useEffect } from 'react';
 function App() {
   const mapRef = useRef<LeafletMapHandle>(null);
   const [mapHandle, setMapHandle] = useState<LeafletMapHandle | null>(null);
-  const { isMcpApp, location: initialLocation } = useMcpContext();
+  const {
+    isMcpApp,
+    location: initialLocation,
+    mapFeatures: initialMapFeatures,
+    clearExisting,
+  } = useMcpContext();
   const [geocodeQuery, setGeocodeQuery] = useState('');
   const [isGeocoding, setIsGeocoding] = useState(false);
 
@@ -22,11 +27,22 @@ function App() {
 
   // In MCP mode, auto-geocode the provided location on mount
   useEffect(() => {
-    if (isMcpApp && initialLocation && mapRef.current) {
+    if (!isMcpApp || !mapRef.current) return;
+
+    if (clearExisting) {
+      mapRef.current.clearFeatures();
+    }
+
+    if (initialMapFeatures?.features?.length) {
+      mapRef.current.addFeatures(initialMapFeatures);
+      return;
+    }
+
+    if (initialLocation) {
       setGeocodeQuery(initialLocation);
       performGeocode(initialLocation);
     }
-  }, [isMcpApp, initialLocation]);
+  }, [isMcpApp, initialLocation, initialMapFeatures, clearExisting]);
 
   // Capture the ref once the map mounts
   const handleMapRef = useCallback((node: LeafletMapHandle | null) => {

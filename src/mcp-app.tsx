@@ -11,11 +11,14 @@ import {
   applyHostStyleVariables,
   applyHostFonts,
 } from "@modelcontextprotocol/ext-apps";
+import type { MapFeatureCollection } from "@/types/map";
 import React, { createContext, useContext, useMemo } from "react";
 
 export interface McpAppContextType {
   isMcpApp: boolean;
   location?: string;
+  clearExisting?: boolean;
+  mapFeatures?: MapFeatureCollection;
 }
 
 const McpAppContext = createContext<McpAppContextType>({
@@ -46,12 +49,37 @@ export async function initMcpApp(): Promise<McpAppContextType> {
     },
   });
 
-  // Get the location from tool input
-  const context = await new Promise<McpAppContextType>((resolve) => {
-    app.ontoolinput = (input) => {
-      const location = input.arguments?.location as string | undefined;
-      resolve({ isMcpApp: true, location });
+  const extractContext = (payload: unknown): McpAppContextType => {
+    const obj = payload && typeof payload === "object"
+      ? payload as Record<string, unknown>
+      : {};
+
+    return {
+      isMcpApp: true,
+      location: typeof obj.location === "string" ? obj.location : undefined,
+      clearExisting: typeof obj.clearExisting === "boolean" ? obj.clearExisting : undefined,
+      mapFeatures: (obj.mapFeatures as MapFeatureCollection | undefined),
     };
+  };
+
+  const contextPromise = new Promise<McpAppContextType>((resolve) => {
+    let resolved = false;
+
+    const resolveOnce = (context: McpAppContextType) => {
+      if (resolved) return;
+      resolved = true;
+      resolve(context);
+    };
+
+    app.ontoolinput = (input) => {
+      resolveOnce(extractContext(input.arguments));
+    };
+
+    app.ontoolresult = (result) => {
+      resolveOnce(extractContext(result.structuredContent));
+    };
+
+    setTimeout(() => resolveOnce({ isMcpApp: true }), 500);
   });
 
   // Handle host context changes (theme, styles, safe area insets)
@@ -75,7 +103,7 @@ export async function initMcpApp(): Promise<McpAppContextType> {
   // Connect to host
   await app.connect(new PostMessageTransport());
 
-  return context;
+  return contextPromise;
 }
 
 /**

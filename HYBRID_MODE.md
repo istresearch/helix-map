@@ -68,25 +68,62 @@ npm run build         # Do both
 npm run serve         # Start MCP server listening on stdio
 ```
 
-## 🎯 MCP Tool: `view-map`
+## 🎯 MCP Tools
+
+### `geocode` (text tool)
+
+Searches OpenStreetMap Nominatim and returns up to 5 matches with coordinates and bounding boxes.
+
+#### Input Schema
+```typescript
+{
+   query: string
+   limit?: number // default 5, min 1, max 10
+}
+```
+
+### `view-map` (app tool)
+
+Displays the interactive map UI and can render geocoded locations plus custom points, lines, polygons, and GeoJSON overlays.
 
 ### Input Schema
 ```typescript
 {
-  location?: string  // Location to geocode (e.g., "Central Park", "Paris")
+   location?: string
+   clearExisting?: boolean
+   point?: { lat: number; lon: number; title?: string; description?: string; color?: string }
+   points?: Array<{ lat: number; lon: number; title?: string; description?: string; color?: string }>
+   line?: {
+      coordinates: Array<{ lat: number; lon: number }>
+      title?: string
+      description?: string
+      color?: string
+      weight?: number
+   }
+   polygon?: {
+      coordinates: Array<{ lat: number; lon: number }>
+      title?: string
+      description?: string
+      color?: string
+      fillOpacity?: number
+      weight?: number
+   }
+   geojson?: FeatureCollection
 }
 ```
 
 ### Response
 - **Text content**: Human-readable status message
-- **Structured content**: `{ location: string }` for the UI to render
+- **Structured content**: `{ location?, clearExisting, mapFeatures }` for UI rendering
 
 ### Example Agent Usage (Claude mode)
 
 ```
-Agent: "Show me a map of Tokyo"
-Tool called: view-map(location="Tokyo")
-Response UI: Interactive map centered on Tokyo, red marker with location details
+Agent: "Show me a map of Tokyo and add two nearby points"
+Tool calls:
+1) geocode(query="Tokyo", limit=1)
+2) view-map(location="Tokyo", points=[...], clearExisting=true)
+Response UI: Interactive map with geocoded Tokyo marker and requested overlays
 ```
 
 ## 📁 Key Files
@@ -131,9 +168,10 @@ Once `yarn dev` is running, open **http://localhost:5173/** and try:
    "Can you show me a map of the Taj Mahal?"
    ```
 
-2. **MCP Server invokes `view-map`**:
+2. **MCP Server invokes tools**:
    ```javascript
-   view-map(location="Taj Mahal")
+   geocode(query="Taj Mahal")
+   view-map(location="Taj Mahal", clearExisting=true)
    ```
 
 3. **App receives location, geocodes it, renders map**:
