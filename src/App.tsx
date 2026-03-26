@@ -183,7 +183,7 @@ function App() {
 
       {/* Map */}
       <div className='flex-1'>
-        <LeafletMap ref={handleMapRef} />
+        <LeafletMap ref={handleMapRef} enableDraw={!isMcpApp} />
       </div>
     </div>
   );
