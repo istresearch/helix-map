@@ -64,19 +64,38 @@ export async function initMcpApp(): Promise<McpAppContextType> {
 
   const contextPromise = new Promise<McpAppContextType>((resolve) => {
     let resolved = false;
+    let inputFallbackTimer: ReturnType<typeof setTimeout> | undefined;
+    let inputContext: McpAppContextType | null = null;
 
     const resolveOnce = (context: McpAppContextType) => {
       if (resolved) return;
       resolved = true;
+      if (inputFallbackTimer) clearTimeout(inputFallbackTimer);
       resolve(context);
     };
 
+    // Tool input arrives first but may lack server-processed data (e.g. mapFeatures).
+    // Save it and wait briefly for the richer ontoolresult before falling back.
     app.ontoolinput = (input) => {
-      resolveOnce(extractContext(input.arguments));
+      inputContext = extractContext(input.arguments);
+      inputFallbackTimer = setTimeout(() => {
+        if (inputContext) resolveOnce(inputContext);
+      }, 200);
     };
 
+    // Tool result carries the server's structuredContent (e.g. mapFeatures) – prefer it.
     app.ontoolresult = (result) => {
-      resolveOnce(extractContext(result.structuredContent));
+      const resultCtx = extractContext(result.structuredContent);
+      // Merge: keep any fields from input that the result doesn't have
+      if (inputContext) {
+        resolveOnce({
+          ...inputContext,
+          ...resultCtx,
+          mapFeatures: resultCtx.mapFeatures ?? inputContext.mapFeatures,
+        });
+      } else {
+        resolveOnce(resultCtx);
+      }
     };
 
     setTimeout(() => resolveOnce({ isMcpApp: true }), 500);

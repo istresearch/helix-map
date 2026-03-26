@@ -9,6 +9,7 @@
     "build:server": "tsc --project tsconfig.server.json",
     "build": "npm run build:ui && npm run build:server",
     "serve": "tsx server.ts",
+    "serve:dev": "NODE_TLS_REJECT_UNAUTHORIZED=0 tsx server.ts",
     "lint": "eslint .",
     "preview": "vite preview"
   },

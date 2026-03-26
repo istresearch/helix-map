@@ -32,7 +32,13 @@ npm run build
 npm run serve
 ```
 
-This starts the stdio MCP server used by your MCP host/LLM agent.
+If you are behind a corporate proxy or see `SELF_SIGNED_CERT_IN_CHAIN` errors, use the dev variant which disables Node TLS verification:
+
+```bash
+npm run serve:dev
+```
+
+This starts the streamable HTTP MCP server on port 3132.
 
 Health endpoint in this mode:
 
@@ -55,14 +61,31 @@ Input:
 }
 ```
 
+### geocode-and-map
+
+Geocodes one or more addresses and plots them all as markers on the map in a single call.
+This is the preferred tool when the user provides multiple addresses.
+By default, new markers are added on top of the existing map (`clearExisting` defaults to `false`).
+
+Input:
+
+```json
+{
+  "addresses": ["1600 Pennsylvania Ave, Washington DC", "350 Fifth Avenue, New York, NY"],
+  "clearExisting": false,
+  "color": "#e11d48"
+}
+```
+
 ### view-map
 
 App tool that opens the map UI and renders overlays.
+By default, features are added on top of the existing map (`clearExisting` defaults to `false`).
 
 Supported input fields:
 
 - location
-- clearExisting
+- clearExisting (default: false — overlays on existing map)
 - point
 - points
 - line

@@ -10,7 +10,6 @@ import {
   RESOURCE_MIME_TYPE,
 } from "@modelcontextprotocol/ext-apps/server";
 import fs from "node:fs/promises";
-import http from "node:http";
 import path from "node:path";
 import { z } from "zod";
 import { fileURLToPath } from "node:url";
@@ -23,6 +22,17 @@ const DIST_DIR = thisFilePath.endsWith(".ts")
 const serviceStartTime = Date.now();
 const port = Number(process.env.PORT ?? 3132);
 const healthPort = Number(process.env.HEALTH_PORT ?? port);
+
+// ---- logging helper ----
+function log(level: "info" | "warn" | "error", msg: string, data?: unknown) {
+  const ts = new Date().toISOString();
+  const prefix = `[${ts}] [${level.toUpperCase()}]`;
+  if (data !== undefined) {
+    console.log(prefix, msg, typeof data === "string" ? data : JSON.stringify(data, null, 2));
+  } else {
+    console.log(prefix, msg);
+  }
+}
 
 const resourceUri = "ui://helix-map/app.html";
 
@@ -37,7 +47,9 @@ function createServer(): McpServer {
     "geocode",
     {
       description:
-        "Search for places with OpenStreetMap Nominatim. Returns coordinates and bounding boxes for up to 5 matches.",
+        "Look up raw coordinates for a place name or address using OpenStreetMap Nominatim. " +
+        "Returns latitude, longitude, and bounding box data ONLY — does NOT display a map. " +
+        "If the user wants to SEE locations on a map, use 'geocode-and-map' instead.",
       inputSchema: {
         query: z
           .string()
@@ -46,10 +58,12 @@ function createServer(): McpServer {
       },
     },
     async ({ query, limit }: { query: string; limit?: number }) => {
+      log("info", `geocode called: query="${query}" limit=${limit ?? 5}`);
       try {
         const results = await geocodeWithNominatim(query, limit ?? 5);
 
         if (results.length === 0) {
+          log("warn", `geocode: no results for "${query}"`);
           return {
             content: [{ type: "text", text: `No geocoding matches found for \"${query}\".` }],
             structuredContent: { query, results: [] },
@@ -89,23 +103,106 @@ function createServer(): McpServer {
     },
   );
 
+  // Register geocode-and-map: batch-geocode multiple addresses → render on the map
+  registerAppTool(
+    server,
+    "geocode-and-map",
+    {
+      description:
+        "THE PRIMARY TOOL for showing addresses or place names on a map. " +
+        "Accepts one or more raw addresses, geocodes them automatically, and renders all results as markers on a single interactive map. " +
+        "Use this tool whenever the user asks to 'show', 'map', 'pin', or 'plot' addresses or places — " +
+        "do NOT call 'view-map' or 'geocode' separately for this purpose. " +
+        "New markers overlay on the existing map by default (clearExisting defaults to false).",
+      inputSchema: {
+        addresses: z
+          .array(z.string())
+          .min(1)
+          .describe("One or more addresses or place names to geocode and plot (e.g., ['1600 Pennsylvania Ave', 'Empire State Building'])"),
+        clearExisting: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("If true, clear all existing map overlays before adding the new markers."),
+        color: z
+          .string()
+          .optional()
+          .describe("Marker colour applied to all points (e.g., '#e11d48'). Each marker can also be given a unique colour via the host agent."),
+      },
+      _meta: { ui: { resourceUri } },
+    },
+    async (args: { addresses: string[]; clearExisting?: boolean; color?: string }) => {
+      log("info", "geocode-and-map called", { addresses: args.addresses, clearExisting: args.clearExisting });
+
+      const features: MapFeatureCollection["features"] = [];
+      const errors: string[] = [];
+
+      // Geocode every address in parallel
+      const settled = await Promise.allSettled(
+        args.addresses.map(async (addr) => {
+          const results = await geocodeWithNominatim(addr, 1);
+          const first = results[0];
+          if (!first) throw new Error(`No results for "${addr}"`);
+          return { addr, result: first };
+        }),
+      );
+
+      for (const outcome of settled) {
+        if (outcome.status === "fulfilled") {
+          const { addr, result } = outcome.value;
+          features.push({
+            type: "Feature",
+            geometry: {
+              type: "Point",
+              coordinates: [Number(result.lon), Number(result.lat)],
+            },
+            properties: {
+              title: result.display_name.split(",")[0],
+              description: result.display_name,
+              color: args.color ?? "#e11d48",
+            },
+          });
+        } else {
+          errors.push(outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason));
+          log("warn", "geocode-and-map: geocode failure", outcome.reason);
+        }
+      }
+
+      const mapFeatures: MapFeatureCollection = { type: "FeatureCollection", features };
+      const summary = features.length > 0
+        ? `Mapped ${features.length} location(s).${errors.length ? ` ${errors.length} address(es) could not be geocoded.` : ""}`
+        : `Could not geocode any of the provided addresses.`;
+
+      log("info", `geocode-and-map result: ${features.length} mapped, ${errors.length} errors`);
+
+      return {
+        content: [{ type: "text", text: summary }],
+        structuredContent: {
+          clearExisting: args.clearExisting ?? false,
+          mapFeatures,
+          errors: errors.length ? errors : undefined,
+        },
+      };
+    },
+  );
+
   // Register the view-map app tool
   registerAppTool(
     server,
     "view-map",
     {
       description:
-        "Displays an interactive map. Supports geocoding by location name and adding points, lines, polygons, or GeoJSON features.",
+        "Renders an interactive map from pre-computed coordinates, GeoJSON, lines, or polygons. " +
+        "All inputs must already be numeric lat/lon values — this tool does NOT accept raw addresses or place names. " +
+        "If you have addresses or place names instead of coordinates, use 'geocode-and-map' instead. " +
+        "New features overlay on the existing map by default (clearExisting defaults to false). " +
+        "Set clearExisting to true only when you want to start with a blank map.",
       inputSchema: {
-        location: z
-          .string()
-          .optional()
-          .describe("Location to geocode and show on the map (e.g., 'Central Park', 'Paris')"),
         clearExisting: z
           .boolean()
           .optional()
           .default(false)
-          .describe("If true, clear existing map overlays before adding new ones"),
+          .describe("If true, clear all existing map overlays before adding new ones. Defaults to false so new features overlay on the current map."),
         point: z
           .object({
             lat: z.number(),
@@ -115,7 +212,7 @@ function createServer(): McpServer {
             color: z.string().optional(),
           })
           .optional()
-          .describe("Single point to plot"),
+          .describe("Single point marker to plot on the map"),
         points: z
           .array(
             z.object({
@@ -127,7 +224,7 @@ function createServer(): McpServer {
             }),
           )
           .optional()
-          .describe("Multiple points to plot"),
+          .describe("Multiple point markers to plot. Use this when adding two or more locations so they all appear on the same map."),
         line: z
           .object({
             coordinates: z.array(z.object({ lat: z.number(), lon: z.number() })).min(2),
@@ -157,7 +254,6 @@ function createServer(): McpServer {
       _meta: { ui: { resourceUri } },
     },
     async (args: {
-      location?: string;
       clearExisting?: boolean;
       point?: { lat: number; lon: number; title?: string; description?: string; color?: string };
       points?: Array<{ lat: number; lon: number; title?: string; description?: string; color?: string }>;
@@ -178,30 +274,15 @@ function createServer(): McpServer {
       };
       geojson?: MapFeatureCollection;
     }) => {
+      log("info", "view-map called", {
+        clearExisting: args.clearExisting,
+        hasPoint: !!args.point,
+        pointsCount: args.points?.length ?? 0,
+        hasLine: !!args.line,
+        hasPolygon: !!args.polygon,
+        hasGeojson: !!args.geojson,
+      });
       const mapFeatures = buildFeatureCollection(args);
-
-      if (args.location) {
-        try {
-          const geocodeResults = await geocodeWithNominatim(args.location, 1);
-          const first = geocodeResults[0];
-          if (first) {
-            mapFeatures.features.push({
-              type: "Feature",
-              geometry: {
-                type: "Point",
-                coordinates: [Number(first.lon), Number(first.lat)],
-              },
-              properties: {
-                title: first.display_name.split(",")[0],
-                description: first.display_name,
-                color: "#e11d48",
-              },
-            });
-          }
-        } catch {
-          // Geocoding failure should not block rendering other provided features.
-        }
-      }
 
       return {
         content: [
@@ -210,13 +291,10 @@ function createServer(): McpServer {
             text:
               mapFeatures.features.length > 0
                 ? `Displaying map with ${mapFeatures.features.length} feature(s).`
-                : args.location
-                  ? `Displaying map for ${args.location}.`
-                  : "Displaying interactive map.",
+                : "Displaying interactive map.",
           },
         ],
         structuredContent: {
-          location: args.location,
           clearExisting: args.clearExisting ?? false,
           mapFeatures,
         },
@@ -289,12 +367,21 @@ async function geocodeWithNominatim(query: string, limit = 5): Promise<Nominatim
     limit: String(limit),
   });
 
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
-    headers: {
-      "User-Agent": "helix-map-mcp/1.0",
-      "Accept": "application/json",
-    },
-  });
+  let response: globalThis.Response;
+  try {
+    response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
+      headers: {
+        "User-Agent": "helix-map-mcp/1.0",
+        "Accept": "application/json",
+      },
+    });
+  } catch (err: unknown) {
+    // Surface the real cause (e.g. SELF_SIGNED_CERT_IN_CHAIN) so logs are useful
+    const cause = (err as { cause?: Error })?.cause;
+    const detail = cause?.message ?? (err instanceof Error ? err.message : String(err));
+    log("error", `Nominatim fetch failed: ${detail}`);
+    throw new Error(`Nominatim fetch failed: ${detail}`);
+  }
 
   if (!response.ok) {
     throw new Error(`Nominatim request failed (${response.status})`);
@@ -408,7 +495,7 @@ async function startStreamableHTTPServer(): Promise<void> {
       status: "ok",
       service: "helix-map",
       version: "1.0.0",
-      tools: ["geocode", "view-map"],
+      tools: ["geocode", "geocode-and-map", "view-map"],
       uptimeSeconds: Math.floor((Date.now() - serviceStartTime) / 1000),
       timestamp: new Date().toISOString(),
     });
@@ -416,10 +503,18 @@ async function startStreamableHTTPServer(): Promise<void> {
 
   // MCP endpoint — stateless, one server per request
   app.all("/mcp", async (req: Request, res: Response) => {
+    const method = (req.body as Record<string, unknown>)?.method ?? "unknown";
+    const id = (req.body as Record<string, unknown>)?.id ?? null;
+    log("info", `→ ${req.method} /mcp  jsonrpc method=${String(method)}  id=${String(id)}`);
+
     const server = createServer();
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
+
+    transport.onerror = (err) => {
+      log("error", "Transport error:", err instanceof Error ? err.message : String(err));
+    };
 
     res.on("close", () => {
       transport.close().catch(() => {});
@@ -429,8 +524,10 @@ async function startStreamableHTTPServer(): Promise<void> {
     try {
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
+      log("info", `← ${req.method} /mcp  method=${String(method)}  status=${res.statusCode}`);
     } catch (error) {
-      console.error("MCP error:", error);
+      const errMsg = error instanceof Error ? error.stack ?? error.message : String(error);
+      log("error", `MCP handler error for method=${String(method)}:`, errMsg);
       if (!res.headersSent) {
         res.status(500).json({
           jsonrpc: "2.0",
@@ -442,8 +539,8 @@ async function startStreamableHTTPServer(): Promise<void> {
   });
 
   const httpServer = app.listen(port, () => {
-    console.log(`MCP server listening on http://localhost:${port}/mcp`);
-    console.log(`Health endpoint: http://localhost:${port}/health`);
+    log("info", `MCP server listening on http://localhost:${port}/mcp`);
+    log("info", `Health endpoint: http://localhost:${port}/health`);
   });
 
   const shutdown = () => {
