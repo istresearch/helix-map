@@ -115,75 +115,79 @@ function App() {
 
   return (
     <div className='flex h-screen w-screen flex-col'>
-      {/* Toolbar - only show in standalone mode */}
-      {!isMcpApp && (
-        <div className='flex flex-wrap items-center gap-2 border-b border-[var(--border)] bg-[var(--card)] px-4 py-2'>
-          <span className='mr-2 text-sm font-medium text-[var(--muted-foreground)]'>
-            Demo Controls:
-          </span>
+      {/* Toolbar */}
+      <div className='flex flex-wrap items-center gap-2 border-b border-[var(--border)] bg-[var(--card)] px-4 py-2'>
+        {/* Demo sample data buttons - only in standalone mode */}
+        {!isMcpApp && (
+          <>
+            <span className='mr-2 text-sm font-medium text-[var(--muted-foreground)]'>
+              Demo Controls:
+            </span>
 
-          <button
-            onClick={handleAddLandmarks}
-            className='inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] hover:opacity-90'
-          >
-            <MapPin className='size-3.5' />
-            Landmarks
-          </button>
-
-          <button
-            onClick={handleAddPark}
-            className='inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] hover:opacity-90'
-          >
-            <Shapes className='size-3.5' />
-            Hyde Park
-          </button>
-
-          <button
-            onClick={handleAddRoute}
-            className='inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] hover:opacity-90'
-          >
-            <Route className='size-3.5' />
-            Thames Walk
-          </button>
-
-          <button
-            onClick={handleClear}
-            className='inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--accent)]'
-          >
-            <Trash2 className='size-3.5' />
-            Clear
-          </button>
-
-          <div className='mx-2 h-6 w-px bg-[var(--border)]' />
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleGeocode();
-            }}
-            className='flex items-center gap-2'
-          >
-            <input
-              type='text'
-              value={geocodeQuery}
-              onChange={(e) => setGeocodeQuery(e.target.value)}
-              placeholder='Geocode: "Central Park" or "Paris"'
-              className='h-8 w-64 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-xs placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]'
-            />
             <button
-              type='submit'
-              disabled={isGeocoding}
-              className='inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50'
+              onClick={handleAddLandmarks}
+              className='inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] hover:opacity-90'
             >
-              {isGeocoding ? 'Searching...' : 'Search'}
+              <MapPin className='size-3.5' />
+              Landmarks
             </button>
-          </form>
-        </div>
-      )}
 
-      {/* Map */}
+            <button
+              onClick={handleAddPark}
+              className='inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] hover:opacity-90'
+            >
+              <Shapes className='size-3.5' />
+              Hyde Park
+            </button>
+
+            <button
+              onClick={handleAddRoute}
+              className='inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] hover:opacity-90'
+            >
+              <Route className='size-3.5' />
+              Thames Walk
+            </button>
+
+            <div className='mx-2 h-6 w-px bg-[var(--border)]' />
+          </>
+        )}
+
+        {/* Clear + Search - always visible */}
+        <button
+          onClick={handleClear}
+          className='inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--accent)]'
+        >
+          <Trash2 className='size-3.5' />
+          Clear
+        </button>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleGeocode();
+          }}
+          className='flex items-center gap-2'
+        >
+          <input
+            type='text'
+            value={geocodeQuery}
+            onChange={(e) => setGeocodeQuery(e.target.value)}
+            placeholder='Search a location...'
+            className='h-8 w-64 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-xs placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]'
+          />
+          <button
+            type='submit'
+            disabled={isGeocoding}
+            className='inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] hover:opacity-90 disabled:opacity-50'
+          >
+            {isGeocoding ? 'Searching...' : 'Search'}
+          </button>
+        </form>
+      </div>
+
+      {/* Map - draw tools always enabled */}
       <div className='flex-1'>
-        <LeafletMap ref={handleMapRef} />
+        <LeafletMap ref={handleMapRef} enableDraw />
       </div>
     </div>
   );

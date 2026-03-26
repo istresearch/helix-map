@@ -6,7 +6,8 @@ import type {
 } from '@/types/map';
 import { DEFAULT_MAP_CONFIG } from '@/types/map';
 import L from 'leaflet';
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
+import 'leaflet-draw';
+import { useCallback, useEffect, useImperativeHandle, useRef } from 'react';
 
 // Fix Leaflet's default icon path resolution in bundled environments
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
@@ -24,6 +25,7 @@ export interface LeafletMapHandle {
   clearFeatures: () => void;
   fitBounds: (bounds: [[number, number], [number, number]]) => void;
   setView: (center: [number, number], zoom: number) => void;
+  getDrawnGeoJSON: () => MapFeatureCollection;
 }
 
 interface LeafletMapProps {
@@ -31,6 +33,8 @@ interface LeafletMapProps {
   config?: Partial<MapConfig>;
   className?: string;
   initialData?: MapFeatureCollection;
+  enableDraw?: boolean;
+  onFeatureDrawn?: (fc: MapFeatureCollection) => void;
 }
 
 function buildPopupContent(props: MapFeatureProperties): string {
@@ -54,10 +58,13 @@ export function LeafletMap({
   config: configOverrides,
   className,
   initialData,
+  enableDraw = false,
+  onFeatureDrawn,
 }: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layersRef = useRef<L.LayerGroup | null>(null);
+  const drawnItemsRef = useRef<L.FeatureGroup | null>(null);
 
   const config = { ...DEFAULT_MAP_CONFIG, ...configOverrides };
 
@@ -122,12 +129,24 @@ export function LeafletMap({
     mapRef.current?.setView(center, zoom);
   }, []);
 
+  const getDrawnGeoJSON = useCallback((): MapFeatureCollection => {
+    const fc: MapFeatureCollection = { type: 'FeatureCollection', features: [] };
+    if (!drawnItemsRef.current) return fc;
+    drawnItemsRef.current.eachLayer((layer) => {
+      if ('toGeoJSON' in layer && typeof layer.toGeoJSON === 'function') {
+        fc.features.push(layer.toGeoJSON());
+      }
+    });
+    return fc;
+  }, []);
+
   useImperativeHandle(ref, () => ({
     addFeatures,
     clearFeatures,
     fitBounds,
     setView,
-  }), [addFeatures, clearFeatures, fitBounds, setView]);
+    getDrawnGeoJSON,
+  }), [addFeatures, clearFeatures, fitBounds, setView, getDrawnGeoJSON]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -147,6 +166,68 @@ export function LeafletMap({
 
     mapRef.current = map;
     layersRef.current = layers;
+
+    // Add draw controls if enabled (standalone mode)
+    if (enableDraw) {
+      const drawnItems = new L.FeatureGroup();
+      map.addLayer(drawnItems);
+      drawnItemsRef.current = drawnItems;
+
+      const drawControl = new L.Control.Draw({
+        position: 'topright',
+        draw: {
+          polyline: { shapeOptions: { color: '#3388ff', weight: 3 } },
+          polygon: { shapeOptions: { color: '#3388ff', fillOpacity: 0.2 } },
+          rectangle: { shapeOptions: { color: '#3388ff', fillOpacity: 0.2 } },
+          circle: false, // GeoJSON doesn't support circles natively
+          circlemarker: false,
+          marker: {},
+        },
+        edit: {
+          featureGroup: drawnItems,
+          remove: true,
+        },
+      });
+      map.addControl(drawControl);
+
+      map.on(L.Draw.Event.CREATED, (e: L.LeafletEvent) => {
+        const { layer } = e as L.DrawEvents.Created;
+        drawnItems.addLayer(layer);
+        if (onFeatureDrawn) {
+          const fc: MapFeatureCollection = { type: 'FeatureCollection', features: [] };
+          drawnItems.eachLayer((layer) => {
+            if ('toGeoJSON' in layer && typeof layer.toGeoJSON === 'function') {
+              fc.features.push(layer.toGeoJSON());
+            }
+          });
+          onFeatureDrawn(fc);
+        }
+      });
+
+      map.on(L.Draw.Event.EDITED, () => {
+        if (onFeatureDrawn) {
+          const fc: MapFeatureCollection = { type: 'FeatureCollection', features: [] };
+          drawnItems.eachLayer((layer) => {
+            if ('toGeoJSON' in layer && typeof layer.toGeoJSON === 'function') {
+              fc.features.push(layer.toGeoJSON());
+            }
+          });
+          onFeatureDrawn(fc);
+        }
+      });
+
+      map.on(L.Draw.Event.DELETED, () => {
+        if (onFeatureDrawn) {
+          const fc: MapFeatureCollection = { type: 'FeatureCollection', features: [] };
+          drawnItems.eachLayer((layer) => {
+            if ('toGeoJSON' in layer && typeof layer.toGeoJSON === 'function') {
+              fc.features.push(layer.toGeoJSON());
+            }
+          });
+          onFeatureDrawn(fc);
+        }
+      });
+    }
 
     if (initialData) {
       addFeatures(initialData);

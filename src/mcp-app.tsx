@@ -31,10 +31,10 @@ export function useMcpContext() {
 
 /**
  * Detect if running inside MCP host.
- * The sandboxed iframe has origin 'null'.
+ * Checks for sandboxed iframe (origin 'null') or being embedded in a parent frame.
  */
 export function detectMcpMode(): boolean {
-  return window.location.origin === "null";
+  return window.location.origin === "null" || window.parent !== window;
 }
 
 /**
