@@ -17,7 +17,7 @@ const DIST_DIR = thisFilePath.endsWith(".ts")
   ? path.join(__dirname, "dist")
   : __dirname;
 const serviceStartTime = Date.now();
-const healthPort = Number(process.env.HEALTH_PORT ?? 3001);
+const healthPort = Number(process.env.HEALTH_PORT ?? 3132);
 
 const server = new McpServer({
   name: "helix-map",

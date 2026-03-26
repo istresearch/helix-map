@@ -37,7 +37,7 @@ This starts the stdio MCP server used by your MCP host/LLM agent.
 Health endpoint in this mode:
 
 ```bash
-curl http://localhost:3001/health
+curl http://localhost:3132/health
 ```
 
 ## MCP Tools
