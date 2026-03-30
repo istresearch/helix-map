@@ -214,6 +214,71 @@ Step 2 tool: view-map
 }
 ```
 
+## Docker
+
+### Build and run with Docker
+
+```bash
+docker build -t helix-map .
+docker run -d -p 3132:3132 --name helix-map helix-map
+```
+
+Verify it's running:
+
+```bash
+curl http://localhost:3132/health
+```
+
+Stop and remove the container:
+
+```bash
+docker stop helix-map && docker rm helix-map
+```
+
+### Run with Docker Compose
+
+Start the service:
+
+```bash
+docker compose up -d
+```
+
+Follow logs:
+
+```bash
+docker compose logs -f
+```
+
+Rebuild after code changes:
+
+```bash
+docker compose up -d --build
+```
+
+Stop the service:
+
+```bash
+docker compose down
+```
+
+### Override the port
+
+Both methods respect the `PORT` environment variable (default `3132`).
+
+Docker run:
+
+```bash
+docker run -d -p 8080:8080 -e PORT=8080 --name helix-map helix-map
+```
+
+Docker Compose — create a `.env` file:
+
+```
+PORT=8080
+```
+
+Then update `docker-compose.yml` ports to `${PORT:-3132}:${PORT:-3132}` or simply edit the file.
+
 ## Notes
 
 - Vite dev mode and MCP mode are separate processes.

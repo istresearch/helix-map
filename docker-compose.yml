@@ -1,0 +1,18 @@
+services:
+  helix-map:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3132:3132"
+    environment:
+      - PORT=3132
+      - NODE_ENV=production
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3132/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
